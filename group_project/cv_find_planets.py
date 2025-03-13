@@ -15,20 +15,6 @@ moon_template = None
 
 
 def applyWhiteMask(img):
-    # Load the image
-    # Replace with the actual path to your image
-    # # before detecting white, try to increase the brightness of the image
-    # # convert the image to hsv
-    # hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    # # split the channels
-    # h, s, v = cv2.split(hsv)
-    # # increase the brightness
-    # v += 100
-    # # merge the channels
-    # final_hsv = cv2.merge((h, s, v))
-    # # convert back to bgr
-    # img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
-
     # create an image with only white pixels from the image
     # create a mask
     lower_white = np.array([200, 200, 200], dtype=np.uint8)
