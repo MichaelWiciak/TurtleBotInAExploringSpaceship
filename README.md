@@ -67,7 +67,7 @@ The CNN (MobileNetV2, fine-tuned) classifies planets as Earth, Moon, or other. W
 │  └─ Obstacle avoidance      │  ├─ CNN classification        │
 │                             │  ├─ Image stitching           │
 │                             │  └─ Distance calculation      │
-│                              │                               │
+│                             │                               │
 │  State Machine (Goals/Actions)                              │
 │  ├─ Find correct module     │  HUD Overlay                  │
 │  ├─ Scan for windows        │  ├─ Live map                  │
