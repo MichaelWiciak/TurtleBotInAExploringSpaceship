@@ -1,110 +1,139 @@
-# Project Overview: Spacecraft Module and Celestial Body Detection
+# RoboNaut
 
-This project focuses on designing and implementing a solution to enable a robotic system to detect windows in spacecraft modules, identify celestial bodies (specifically Earth and Moon), and navigate within a simulated environment. The system is divided into several key components, each addressing specific challenges encountered during the project.
+> A TurtleBot that explores spacecraft modules, finds windows showing Earth and the Moon, captures images, and does some basic astronomy on the side.
 
-## Table of Contents
-1. [Problem Decomposition](#problem-decomposition)
-2. [Key Components](#key-components)
-   - [Window Detection](#window-detection)
-   - [Planet Detection](#planet-detection)
-     - [Stars Removal](#stars-removal)
-     - [Planet Separation](#planet-separation)
-     - [Template Matching](#template-matching)
-     - [Pre-trained CNN Usage](#pre-trained-cnn-usage)
-   - [Module Detection](#module-detection)
-   - [Window Identification in Modules](#window-identification-in-modules)
-     - [Window Search](#window-search)
-     - [Moving to Windows](#moving-to-windows)
-     - [Duplicate Window Handling](#duplicate-window-handling)
-   - [Image Stitching](#image-stitching)
-   - [Distance Calculations](#distance-calculations)
-3. [Implementation and Results](#implementation-and-results)
-   - [Simulation Performance](#simulation-performance)
-   - [Limitations and Observations](#limitations-and-observations)
-   - [Real Robot Testing](#real-robot-testing)
-     - [Adaptation for Real-World Testing](#adaptation-for-real-world-testing)
-     - [Real-World Performance](#real-world-performance)
-4. [Conclusion](#conclusion)
-5. [Video Demonstration](#video-demonstration)
+[![Watch the demo](https://img.youtube.com/vi/UU7TQqW6gh0/0.jpg)](https://www.youtube.com/watch?v=UU7TQqW6gh0)
 
-## Problem Decomposition
+## What is this?
 
-To tackle the complex task of spacecraft module and celestial body detection, the problem was decomposed into manageable chunks, each focusing on different aspects of the system. This modular approach allowed for easier integration and testing of individual components.
+A robotics project where we threw a [TurtleBot 3 Burger](https://robotis.co.uk/turtle-burg.html) into a simulated spacecraft and told it to go find Earth and the Moon. The robot had to:
 
-## Key Components
+1. Navigate through a spacecraft with two modules
+2. Figure out which module was "safe" (green status light) vs "danger" (red)
+3. Hunt down windows in that module
+4. Look through them to spot Earth and the Moon
+5. Take photos, stitch them together, and calculate the distance between the two
 
-### Window Detection
+The whole thing runs on ROS2 with Nav2 for navigation and a custom computer vision pipeline for detecting windows and identifying planets.
 
-The system uses the robot's camera feed to detect windows within spacecraft modules. The detection algorithm relies on contour analysis, where contours below a certain area threshold are filtered out. Rectangularity is assumed, so the aspect ratio and bounding rectangle dimensions of the contours are analyzed to ensure they match typical window characteristics. This method, however, is sensitive to image quality and perspective distortions, which may lead to false positives or missed detections.
+This was a group project for university - I handled the computer vision side of things (window/module detection, celestial body identification, CNN model training) and but designed the movement algorithms and other bits.
 
-### Planet Detection
+For the full technical write-up, check out [the project report](./Group30.pdf).
 
-Once a window is detected, the system proceeds to identify celestial bodies inside the module.
+## The Interesting Bits
 
-#### Stars Removal
+### The Spiral Search
 
-To enhance the accuracy of detecting planets using the Hough Transform, a preprocessing step removes stars from the image. A white mask identifies potential star regions, which are then dilated to cover and eliminate the stars, resulting in a cleaner image for subsequent circle detection.
+The robot doesn't just drive around randomly. It starts at the center of the module and expands outward in a spiral pattern, sampling random points within an increasing radius. It rotates in place at each point to get a 360-degree view. This is a nice balance between coverage and efficiency, you're not wasting time in already-explored areas, but you're also not missing corners. This was crucial to complete the task within 5 minutes, which was our time limit.
 
-#### Planet Separation
+### Window Detection Pipeline
 
-The system converts the preprocessed image to greyscale, applies Gaussian blur to reduce noise, and then uses the Hough Circle Transform to detect planets. Detected planets are stored as objects, and their images are cropped and saved for further analysis.
+Finding windows through a robot's camera is trickier than it sounds:
 
-#### Template Matching
+1. **Contour analysis** - Windows in this world are rectangular and have white frames. We find contours, filter by area and aspect ratio, and check if they're roughly quadrilaterals.
 
-Initially, template matching was used to identify planets by comparing detected planets with predefined Earth and Moon templates. However, this method struggled with variations in image quality, lighting, and rotation, leading to the adoption of a more robust machine learning approach.
+2. **Perspective correction** - Windows are rarely perfectly frontal. We use a four-point transform to unwarp them so we're looking at them head-on.
 
-#### Pre-trained CNN Usage
+3. **Inside the window** - Once we have a clean window view, we look for planets. Stars are common and annoying, so we mask them out using a white pixel threshold and dilation.
 
-To overcome the limitations of template matching, a pre-trained convolutional neural network (CNN), MobileNetV2, was fine-tuned with a custom dataset to identify planets. The model, trained with augmented data to improve generalization, demonstrated high accuracy in classifying celestial bodies under various conditions.
+### Camera to World Alignment
 
-### Module Detection
+When the robot spots a window, it needs to actually go to it. We calculate the pixel offset from the camera center, convert that to degrees using the camera's field of view (`~62 degrees`), and rotate until the window is centered. Then we drive forward until the window fills enough of the frame (measured in pixel area) to know we are close enough for a good photo.
 
-The system uses the window detection component to locate and assess spacecraft modules. Initially, the robot navigates to the closest module entrance and performs a 360-degree scan to determine the module's safety based on the presence of green or red circles. This method, while adaptable, is time-consuming and may misclassify modules under certain conditions.
+### SIFT for Duplicate Detection
 
-### Window Identification in Modules
+Scanning the same window twice is a waste. We use SIFT (Scale-Invariant Feature Transform) to compare new window captures against previously captured ones. If the feature match ratio is high enough, we skip it.
 
-#### Window Search
+### Real Hardware
 
-The robot employs a randomized goal selection strategy to search for windows within a module. It navigates to random points and performs 360-degree scans to detect windows. If a window is detected, the robot adjusts its position to capture a high-quality image before continuing the search.
+Getting this to work on an actual TurtleBot (not just simulation) meant dealing with:
 
-#### Moving to Windows
+- Variable lighting conditions
+- Camera differences between simulation and reality
+- Physical navigation challenges (wheel slip, obstacles)
+- Retraining the CNN model with real-world data
 
-Upon detecting a window, the robot calculates the necessary rotation to align with the window and then moves towards it. This process involves calculating pixel-to-degree ratios for accurate alignment and incorporating time-out functionality to prevent the robot from getting stuck.
+The CNN (MobileNetV2, fine-tuned) classifies planets as Earth, Moon, or other. We trained it on augmented data to handle the variety of angles and lighting we'd encounter.
 
-#### Duplicate Window Handling
+## Architecture
 
-To avoid capturing duplicate windows, the system uses the Scale-Invariant Feature Transform (SIFT) algorithm to compare new window images with previously captured ones. This technique, although computationally expensive, effectively identifies and filters out duplicates based on visual similarity.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         RoboNaut                            │
+├─────────────────────────────────────────────────────────────┤
+│  Navigation (Nav2)          │  Vision Pipeline              │
+│  ├─ Path planning           │  ├─ Window detection          │
+│  ├─ Pose estimation         │  ├─ Planet detection          │
+│  └─ Obstacle avoidance      │  ├─ CNN classification        │
+│                             │  ├─ Image stitching           │
+│                             │  └─ Distance calculation      │
+│                              │                               │
+│  State Machine (Goals/Actions)                              │
+│  ├─ Find correct module     │  HUD Overlay                  │
+│  ├─ Scan for windows        │  ├─ Live map                  │
+│  ├─ Capture windows         │  ├─ Detection overlays        │
+│  └─ Compute measurements    │  └─ Robot telemetry           │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Image Stitching
+## Project Structure
 
-The detected images of Earth and Moon are stitched together using SIFT for keypoint detection and RANSAC for homography estimation. The resulting images are warped and blended to create a seamless panoramic view.
+```
+.
+├── group_project/          # Main ROS2 package
+│   ├── robonaut.py         # Main state machine and robot logic
+│   ├── cv_detect.py        # Window and status light detection
+│   ├── cv_find_planets.py  # Planet separation and classification
+│   ├── cv_planet_model.py  # CNN model interface
+│   ├── astro_stitch.py     # Image stitching (SIFT + RANSAC)
+│   ├── cv_compare.py       # SIFT-based image comparison
+│   ├── distance_calculations.py  # Triangulation math
+│   ├── hud.py              # Live HUD overlay
+│   └── coordinates.py      # Module coordinate definitions
+├── launch/                 # ROS2 launch files
+├── worlds/                 # Gazebo worlds and maps
+│   ├── spacecraft_easy/
+│   ├── spacecraft_moderate/
+│   ├── spacecraft_hard/
+│   └── real_world/
+├── moonDistance/           # Standalone planet detection experiments
+└── supporting_files/       # CNN model weights, templates
+```
 
-### Distance Calculations
+## Running It
 
-The distance between Earth and Moon is calculated using triangulation, based on their detected positions in the images. While this method provides a simplified estimation, it assumes ideal conditions and may not be entirely accurate in real-world scenarios.
+### Simulation
 
-## Implementation and Results
+```bash
+# Launch the world and robot
+ros2 launch group_project world.launch.py world:=hard
 
-### Simulation Performance
+# In another terminal, run navigation
+ros2 launch group_project navigation.launch.py world:=hard
 
-The system was tested in various simulated environments using Gazebo. It demonstrated high efficiency and accuracy in navigating and detecting celestial bodies across different scenarios, including an "Interesting" environment with additional obstacles. The robot consistently identified and captured images of the Earth and Moon, even under challenging conditions.
+# And the main RoboNaut node
+ros2 launch group_project robotnaut_go.launch.py world:=hard
+```
 
-### Limitations and Observations
+Available worlds: `easy`, `moderate`, `hard`, `real`
 
-Despite the system's robustness, certain limitations were noted, such as occasional misclassification of objects due to image quality issues and the robot getting stuck during navigation. Additionally, the system's reliance on certain assumptions (e.g., consistent lighting, fixed perspective) may limit its effectiveness in more complex real-world scenarios.
+### Real Hardware
 
-### Real Robot Testing
+The `real` world is configured for actual TurtleBot deployment. Expect some tuning may be needed depending on your setup.
 
-#### Adaptation for Real-World Testing
+## Tech Stack
 
-Adapting the solution for real-world testing required addressing challenges like varying lighting conditions, physical obstacles, and differences in module size. Adjustments were made to the computer vision algorithms, data augmentation techniques were employed, and the system was fine-tuned to handle the unique constraints of the real environment.
+- **ROS2** - Robot operating system
+- **Gazebo** - Robot simulation
+- **Nav2** - Navigation stack
+- **OpenCV** - Computer vision (contour detection, Hough transforms, SIFT)
+- **PyTorch** - CNN model (MobileNetV2)
+- **Python** - All the code
 
-#### Real-World Performance
+## Video
 
-In real-world testing, the robot successfully navigated to and identified the correct module, captured images of windows, and attempted to detect the Earth and Moon. However, challenges were encountered in accurately detecting celestial bodies, highlighting the need for further refinement.
+Watch the robot do its thing: [RoboNaut Demo on YouTube](https://www.youtube.com/watch?v=UU7TQqW6gh0)
 
-## Video Demonstration
+## More Details
 
-For a visual overview of the project, please refer to the [video demonstration](https://www.youtube.com/watch?v=UU7TQqW6gh0).
-
-See the report for further detail. 
+For the full technical breakdown - architecture decisions, algorithm details, results, and lessons learned - see [the project report](./Group30.pdf).
